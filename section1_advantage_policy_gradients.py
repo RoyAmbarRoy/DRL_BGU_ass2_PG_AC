@@ -16,8 +16,8 @@ class StateValueNetwork:
 
         with tf.variable_scope(name):
             self.state = tf.placeholder(tf.float32, [None, self.state_size], name="state")
-            self.total_reward = tf.placeholder(tf.int32, [1], name="total_reward")
-            # self.R_t = tf.placeholder(tf.float32, name="total_rewards")
+            self.total_reward = tf.placeholder(tf.int32, name="total_reward")
+            self.A = tf.placeholder(tf.float32, name="advantage")
 
             self.W1 = tf.get_variable("W1", [self.state_size, 12],
                                       initializer=tf.contrib.layers.xavier_initializer(seed=0))
@@ -33,9 +33,10 @@ class StateValueNetwork:
             # # Softmax probability distribution over actions
             # self.reward_expectation = tf.squeeze(tf.nn.li(self.output))
             # Loss with negative log probability
-            self.mse_loss = tf.losses.mean_squared_error(self.total_reward,
-                                                         self.value_estimate)  # the loss function
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.mse_loss)
+            self.loss = self.A*self.value_estimate
+            # self.mse_loss = tf.losses.mean_squared_error(self.total_reward,
+            #                                              self.value_estimate)  # the loss function
+            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
 
 class PolicyNetwork:
@@ -47,7 +48,7 @@ class PolicyNetwork:
         with tf.variable_scope(name):
             self.state = tf.placeholder(tf.float32, [None, self.state_size], name="state")
             self.action = tf.placeholder(tf.int32, [self.action_size], name="action")
-            self.delta = tf.placeholder(tf.float32, name="total_rewards")
+            self.A = tf.placeholder(tf.float32, name="advantage")
 
             self.W1 = tf.get_variable("W1", [self.state_size, 12],
                                       initializer=tf.contrib.layers.xavier_initializer(seed=0))
@@ -65,7 +66,7 @@ class PolicyNetwork:
             # Loss with negative log probability
             self.neg_log_prob = tf.nn.softmax_cross_entropy_with_logits(logits=self.output,
                                                                         labels=self.action)  # (y_hat, y)
-            self.loss = tf.reduce_mean(self.neg_log_prob * self.delta)
+            self.loss = tf.reduce_mean(self.neg_log_prob * self.A)
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
 
@@ -139,17 +140,18 @@ with tf.Session() as sess:
             total_discounted_return_estimate = sess.run(state_value_network.value_estimate,
                                                         {state_value_network.state: transition.state})
 
-            delta = total_discounted_return - total_discounted_return_estimate
+            A = total_discounted_return - total_discounted_return_estimate
 
             # update state value network
             state_value_feed_dict = {state_value_network.state: transition.state,
-                                     state_value_network.total_reward: np.array([total_discounted_return])}
+                                     state_value_network.total_reward: total_discounted_return,
+                                     state_value_network.A: A}
             sess = sess or tf.get_default_session()
-            _, state_value_loss = sess.run([state_value_network.optimizer, state_value_network.mse_loss],
+            _, state_value_loss = sess.run([state_value_network.optimizer, state_value_network.loss],
                                            state_value_feed_dict)
 
             # update policy network
-            feed_dict = {policy.state: transition.state, policy.delta: delta,
+            feed_dict = {policy.state: transition.state, policy.A: A,
                          policy.action: transition.action}
             sess = sess or tf.get_default_session()
             _, loss = sess.run([policy.optimizer, policy.loss], feed_dict)
