@@ -4,6 +4,7 @@ import tensorflow as tf
 import collections
 
 env = gym.make('CartPole-v1')
+env._max_episode_steps = None
 
 np.random.seed(1)
 
@@ -21,9 +22,12 @@ class StateValueNetwork:
 
             self.W1 = tf.get_variable("W1", [self.state_size, 12],
                                       initializer=tf.contrib.layers.xavier_initializer(seed=0))
-            self.b1 = tf.get_variable("b1", [12], initializer=tf.zeros_initializer())
-            self.W2 = tf.get_variable("W2", [12, 1], initializer=tf.contrib.layers.xavier_initializer(seed=0))
-            self.b2 = tf.get_variable("b2", [1], initializer=tf.zeros_initializer())
+            self.b1 = tf.get_variable("b1", [12],
+                                      initializer=tf.zeros_initializer())
+            self.W2 = tf.get_variable("W2", [12, 1],
+                                      initializer=tf.contrib.layers.xavier_initializer(seed=0))
+            self.b2 = tf.get_variable("b2", [1],
+                                      initializer=tf.zeros_initializer())
 
             self.Z1 = tf.add(tf.matmul(self.state, self.W1), self.b1)
             self.A1 = tf.nn.relu(self.Z1)
@@ -33,10 +37,12 @@ class StateValueNetwork:
             # # Softmax probability distribution over actions
             # self.reward_expectation = tf.squeeze(tf.nn.li(self.output))
             # Loss with negative log probability
-            self.loss = self.A*self.value_estimate
-            # self.mse_loss = tf.losses.mean_squared_error(self.total_reward,
-            #                                              self.value_estimate)  # the loss function
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
+            # self.loss = self.A*self.value_estimate
+            self.loss = tf.losses.mean_squared_error(self.value_estimate,
+                                                     self.total_reward)  # the loss function
+            # self.loss = tf.squared_difference(self.value_estimate, self.total_reward)
+            # self.loss = tf.reduce_mean(self.value_estimate * self.A)
+            self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss)
 
 
 class PolicyNetwork:
@@ -75,9 +81,10 @@ state_size = 4
 action_size = env.action_space.n
 
 max_episodes = 5000
-max_steps = 501
-discount_factor = 0.999
+max_steps = 5000
+discount_factor = 0.99
 learning_rate = 0.001
+value_net_learning_rate = 0.01
 
 render = False
 
@@ -85,7 +92,7 @@ render = False
 tf.reset_default_graph()
 policy = PolicyNetwork(state_size, action_size, learning_rate)
 
-state_value_network = StateValueNetwork(state_size, 1, learning_rate)
+state_value_network = StateValueNetwork(state_size, 1, value_net_learning_rate)
 
 # Start training the agent with REINFORCE algorithm
 with tf.Session() as sess:
