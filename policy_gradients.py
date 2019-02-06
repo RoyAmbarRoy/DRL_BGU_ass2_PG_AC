@@ -5,6 +5,7 @@ import collections
 
 
 env = gym.make('CartPole-v1')
+env._max_episode_steps = None
 
 np.random.seed(1)
 
@@ -33,7 +34,7 @@ class PolicyNetwork:
             # Softmax probability distribution over actions
             self.actions_distribution = tf.squeeze(tf.nn.softmax(self.output))
             # Loss with negative log probability
-            self.neg_log_prob = tf.nn.softmax_cross_entropy_with_logits(logits=self.output, labels=self.action) #(y_hat, y)
+            self.neg_log_prob = tf.nn.softmax_cross_entropy_with_logits(logits=self.output, labels=self.action)
             self.loss = tf.reduce_mean(self.neg_log_prob * self.R_t)
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
@@ -43,9 +44,9 @@ state_size = 4
 action_size = env.action_space.n
 
 max_episodes = 5000
-max_steps = 501
+max_steps = 50000
 discount_factor = 0.99
-learning_rate = 0.01
+learning_rate = 0.001
 
 render = False
 
