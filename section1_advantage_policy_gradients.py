@@ -2,11 +2,30 @@ import gym
 import numpy as np
 import tensorflow as tf
 import collections
+import summary_util
 
 env = gym.make('CartPole-v1')
 env._max_episode_steps = None
 
 np.random.seed(1)
+
+# CONFIGURATIONS
+V_NET_LAYER_SIZE = 20
+POLICY_NET_LAYER_SIZE = 20
+
+LOGS_PATH = './logs/advantage-PG'
+
+# Define hyper parameters
+state_size = 4
+action_size = env.action_space.n
+
+max_episodes = 5000
+max_steps = 5000
+discount_factor = 0.99
+learning_rate = 0.001
+value_net_learning_rate = 0.01
+
+render = False
 
 
 class StateValueNetwork:
@@ -76,23 +95,13 @@ class PolicyNetwork:
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
 
-# Define hyperparameters
-state_size = 4
-action_size = env.action_space.n
-
-max_episodes = 5000
-max_steps = 5000
-discount_factor = 0.99
-learning_rate = 0.001
-value_net_learning_rate = 0.01
-
-render = False
-
 # Initialize the policy network
 tf.reset_default_graph()
-policy = PolicyNetwork(state_size, action_size, learning_rate)
 
+policy = PolicyNetwork(state_size, action_size, learning_rate)
 state_value_network = StateValueNetwork(state_size, 1, value_net_learning_rate)
+
+summary_writer = summary_util.init(LOGS_PATH)
 
 # Start training the agent with REINFORCE algorithm
 with tf.Session() as sess:
@@ -101,6 +110,8 @@ with tf.Session() as sess:
     Transition = collections.namedtuple("Transition", ["state", "action", "reward", "next_state", "done"])
     episode_rewards = np.zeros(max_episodes)
     average_rewards = 0.0
+    policy_losses = []
+    value_losses = []
 
     for episode in range(max_episodes):
         state = env.reset()
@@ -156,9 +167,20 @@ with tf.Session() as sess:
             sess = sess or tf.get_default_session()
             _, state_value_loss = sess.run([state_value_network.optimizer, state_value_network.loss],
                                            state_value_feed_dict)
+            value_losses.append(state_value_loss)
 
             # update policy network
             feed_dict = {policy.state: transition.state, policy.A: A,
                          policy.action: transition.action}
             sess = sess or tf.get_default_session()
             _, loss = sess.run([policy.optimizer, policy.loss], feed_dict)
+            policy_losses.append(loss)
+
+        # update and save tensorboared summaries
+        policy_episode_summary = summary_util.create_avg_summary(policy_losses, "policy loss")
+        value_episode_summary = summary_util.create_avg_summary(value_losses, "value loss")
+        rewards_summary = summary_util.create_summary(episode_rewards[episode], "total rewards")
+        summaries = [policy_episode_summary, value_episode_summary, rewards_summary]
+        summary_util.write_summaries(summary_writer, episode, summaries)
+
+    summary_writer.close()

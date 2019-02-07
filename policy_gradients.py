@@ -2,6 +2,7 @@ import gym
 import numpy as np
 import tensorflow as tf
 import collections
+import summary_util
 
 
 env = gym.make('CartPole-v1')
@@ -9,6 +10,7 @@ env._max_episode_steps = None
 
 np.random.seed(1)
 
+LOGS_PATH = './logs/PG'
 
 class PolicyNetwork:
     def __init__(self, state_size, action_size, learning_rate, name='policy_network'):
@@ -54,6 +56,7 @@ render = False
 tf.reset_default_graph()
 policy = PolicyNetwork(state_size, action_size, learning_rate)
 
+summary_writer = summary_util.init(LOGS_PATH)
 
 # Start training the agent with REINFORCE algorithm
 with tf.Session() as sess:
@@ -67,6 +70,7 @@ with tf.Session() as sess:
         state = env.reset()
         state = state.reshape([1, state_size])
         episode_transitions = []
+        policy_losses = []
 
         for step in range(max_steps):
             actions_distribution = sess.run(policy.actions_distribution, {policy.state: state})
@@ -101,3 +105,12 @@ with tf.Session() as sess:
             total_discounted_return = sum(discount_factor ** i * t.reward for i, t in enumerate(episode_transitions[t:])) # Rt
             feed_dict = {policy.state: transition.state, policy.R_t: total_discounted_return, policy.action: transition.action}
             _, loss = sess.run([policy.optimizer, policy.loss], feed_dict)
+            policy_losses.append(loss)
+
+        # update and save tensorboared summaries
+        policy_episode_summary = summary_util.create_avg_summary(policy_losses, "policy loss")
+        rewards_summary = summary_util.create_summary(episode_rewards[episode], "total rewards")
+        summaries = [policy_episode_summary, rewards_summary]
+        summary_util.write_summaries(summary_writer, episode, summaries)
+
+    summary_writer.close()

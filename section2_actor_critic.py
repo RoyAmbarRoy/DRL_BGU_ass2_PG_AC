@@ -6,9 +6,13 @@ import summary_util
 env = gym.make('CartPole-v1')
 env._max_episode_steps = None
 
-np.random.seed(1)
-V_NET_LAYER_SIZE = 20
-POLICY_NET_LAYER_SIZE = 20
+np.random.seed(9)
+
+# CONFIGURATIONS
+V_NET_LAYER_SIZE = 25
+POLICY_NET_LAYER_SIZE = 25
+
+LOGS_PATH = './logs/actor-critic/3'
 
 # Define hyper parameters
 state_size = 4
@@ -17,9 +21,9 @@ action_size = env.action_space.n
 max_episodes = 5000
 max_steps = 10000
 discount_factor = 0.99
-learning_rate = 0.001
+policy_learning_rate = 0.001
 value_net_learning_rate = 0.01
-learning_rate_decay = 0.999
+learning_rate_decay = 0.9999
 
 render = False
 
@@ -57,9 +61,9 @@ class StateValueNetwork:
             self.value_estimate = tf.squeeze(self.Z3)
 
             self.loss = tf.squared_difference(self.value_estimate, self.td_target)
-            tf.summary.scalar("Value network loss", self.loss)
-            # self.mse_loss = tf.losses.mean_squared_error(self.total_reward,
-            #                                              self.value_estimate)  # the loss function
+            # tf.summary.scalar("Value network loss", self.loss)
+            # self.loss = tf.losses.mean_squared_error(self.total_reward,
+            #                                            self.value_estimate)  # the loss function
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
 
@@ -96,7 +100,7 @@ class PolicyNetwork:
             self.neg_log_prob = tf.nn.softmax_cross_entropy_with_logits(logits=self.output,
                                                                         labels=self.action)  # (y_hat, y)
             self.loss = tf.reduce_mean(self.neg_log_prob * self.A)
-            tf.summary.scalar("Policy network loss", self.loss)
+            # tf.summary.scalar("Policy network loss", self.loss)
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
 
@@ -107,8 +111,7 @@ policy = PolicyNetwork(state_size, action_size)
 state_value_network = StateValueNetwork(state_size, 1, value_net_learning_rate)
 
 
-merged_summary = tf.summary.merge_all()
-writer = tf.summary.FileWriter('./logs', graph=tf.get_default_graph())
+summary_writer = summary_util.init(LOGS_PATH)
 
 # Start training the agent with REINFORCE algorithm
 with tf.Session() as sess:
@@ -152,22 +155,22 @@ with tf.Session() as sess:
             td_target = reward + discount_factor * V_s_prime
             td_error = td_target - V_s  # the TD error is the advantage
 
-            learning_rate = decay_learning_rate(learning_rate, episode)
-
-            # update policy network
-            feed_dict = {policy.state: state,
-                         policy.A: td_error * i,
-                         policy.action: action_one_hot,
-                         policy.learning_rate: learning_rate}
-            _, loss = sess.run([policy.optimizer, policy.loss], feed_dict)
-            policy_losses.append(loss)
-
             # update V network
             state_value_feed_dict = {state_value_network.state: state,
                                      state_value_network.td_target: td_target}
             _, state_value_loss = sess.run([state_value_network.optimizer, state_value_network.loss],
                                            state_value_feed_dict)
             value_losses.append(state_value_loss)
+
+            policy_learning_rate = decay_learning_rate(policy_learning_rate, episode)
+
+            # update policy network
+            feed_dict = {policy.state: state,
+                         policy.A: td_error * i,
+                         policy.action: action_one_hot,
+                         policy.learning_rate: policy_learning_rate}
+            _, loss = sess.run([policy.optimizer, policy.loss], feed_dict)
+            policy_losses.append(loss)
 
             if done:  # episode done
                 if episode > 98:
@@ -184,12 +187,14 @@ with tf.Session() as sess:
             i = discount_factor * i
             state = next_state
 
-        policy_episode_summary = summary_util.create_summary(policy_losses, "policy loss")
-        value_episode_summary = summary_util.create_summary(value_losses, "value loss")
-
-        summary_util.write_summaries(writer, episode, policy_episode_summary, value_episode_summary)
+        # update and save tensorboared summaries
+        policy_episode_summary = summary_util.create_avg_summary(policy_losses, "policy loss")
+        value_episode_summary = summary_util.create_avg_summary(value_losses, "value loss")
+        rewards_summary = summary_util.create_summary(episode_rewards[episode], "total rewards")
+        summaries = [policy_episode_summary, value_episode_summary, rewards_summary]
+        summary_util.write_summaries(summary_writer, episode, summaries)
 
         if solved:
             break
 
-    writer.close()
+    summary_writer.close()
