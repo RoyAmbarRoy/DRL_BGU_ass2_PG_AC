@@ -6,24 +6,24 @@ import summary_util
 env = gym.make('CartPole-v1')
 env._max_episode_steps = None
 
-np.random.seed(9)
+np.random.seed(1)
 
 # CONFIGURATIONS
-V_NET_LAYER_SIZE = 25
-POLICY_NET_LAYER_SIZE = 25
+V_NET_LAYER_SIZE = 20
+POLICY_NET_LAYER_SIZE = 20
 
-LOGS_PATH = './logs/actor-critic/3'
+LOGS_PATH = './logs/actor-critic'
 
 # Define hyper parameters
 state_size = 4
 action_size = env.action_space.n
 
 max_episodes = 5000
-max_steps = 10000
+max_steps = 10000000
 discount_factor = 0.99
 policy_learning_rate = 0.001
 value_net_learning_rate = 0.01
-learning_rate_decay = 0.9999
+learning_rate_decay = 0.999
 
 render = False
 
@@ -61,9 +61,6 @@ class StateValueNetwork:
             self.value_estimate = tf.squeeze(self.Z3)
 
             self.loss = tf.squared_difference(self.value_estimate, self.td_target)
-            # tf.summary.scalar("Value network loss", self.loss)
-            # self.loss = tf.losses.mean_squared_error(self.total_reward,
-            #                                            self.value_estimate)  # the loss function
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
 
@@ -100,7 +97,6 @@ class PolicyNetwork:
             self.neg_log_prob = tf.nn.softmax_cross_entropy_with_logits(logits=self.output,
                                                                         labels=self.action)  # (y_hat, y)
             self.loss = tf.reduce_mean(self.neg_log_prob * self.A)
-            # tf.summary.scalar("Policy network loss", self.loss)
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
 
